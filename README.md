@@ -1,5 +1,11 @@
 # XEMX for macOS
 
+<p align="center">
+  <a href="https://github.com/m4rtinelli/xemx-mac/releases/latest/download/XEMX-Installer.pkg"><img alt="Download installer (.pkg)" src="https://img.shields.io/badge/Download-Installer%20(.pkg)-ff5a1f?style=for-the-badge&logo=apple&logoColor=white"></a>
+  &nbsp;
+  <a href="https://github.com/m4rtinelli/xemx-mac/releases/latest/download/XEMX-macOS.dmg"><img alt="Download disk image (.dmg)" src="https://img.shields.io/badge/Download-Disk%20image%20(.dmg)-30343c?style=for-the-badge&logo=apple&logoColor=white"></a>
+</p>
+
 A plugin version of the Korg Electribe EMX-1. It plays the patterns from `.emx` SmartMedia card files and puts every control where it sits on the original front panel.
 
 - Formats: AU, VST3 and Standalone, universal binary (Apple Silicon + Intel), macOS 11+
@@ -9,13 +15,20 @@ A plugin version of the Korg Electribe EMX-1. It plays the patterns from `.emx` 
 
 ## Install
 
-Download **XEMX-Installer.pkg** from the latest Release (or from the `XEMX-Installer` artifact of an Actions run), double-click it and follow the steps. It installs the VST3 to `/Library/Audio/Plug-Ins/VST3`, the Audio Unit to `/Library/Audio/Plug-Ins/Components` and the app to `/Applications`. **Customize** lets you pick only some of them.
+Two downloads, both universal (Apple Silicon + Intel), macOS 11 or later:
 
-The installer is not notarized yet. The first time, macOS shows an "unidentified developer" warning: open System Settings → Privacy & Security and click **Open Anyway**.
+| | What it does | Pick this if |
+|---|---|---|
+| **Installer (.pkg)** | Double-click and follow the steps. Under **Install for me only** it goes to `~/Library/Audio/Plug-Ins`; under **Install for all users** to `/Library/Audio/Plug-Ins`. **Customize** picks VST3, AU and/or the app. | You want the easy way. No Terminal needed. |
+| **Disk image (.dmg)** | Opens a window with `XEMX.vst3`, `XEMX.component`, `XEMX.app` and shortcuts to the standard folders. Drag each one wherever you want, including your own VST3 folder. | You keep plug-ins in a custom folder. |
+
+**First launch:** the downloads are not notarized yet, so macOS shows an "unidentified developer" warning. Open **System Settings → Privacy & Security** and click **Open Anyway**. With the .dmg you also need to run `xattr -cr` once on the copied plug-ins (the exact commands are in *Read me first.txt* inside the image).
+
+**In Ableton Live:** Settings → Plug-Ins → turn on Audio Units and/or VST3 (system or custom folder) → Rescan.
 
 ## Releases and signing
 
-- Push a tag such as `v0.1.0` to publish a GitHub Release with the installer attached.
+- Push a tag such as `v0.1.0` to publish a GitHub Release with both downloads attached. The buttons above always point to the latest release.
 - To remove the macOS warning, add these repository secrets from an Apple Developer account. CI then signs with Developer ID, notarizes and staples automatically:
   `MACOS_CERTS_P12` (base64 .p12 with the Developer ID Application + Installer certificates), `MACOS_CERTS_PASSWORD`, `MACOS_APP_IDENTITY`, `MACOS_INSTALLER_IDENTITY`, `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_PASSWORD`.
 

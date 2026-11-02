@@ -1,9 +1,6 @@
-Download **XEMX-Installer.pkg**, double-click it and follow the steps. It installs:
+Two ways to install, both universal (Apple Silicon + Intel), macOS 11+:
 
-- VST3 plug-in → /Library/Audio/Plug-Ins/VST3
-- Audio Unit → /Library/Audio/Plug-Ins/Components
-- Standalone app → /Applications
+- **XEMX-Installer.pkg**: double-click and follow the steps. Choose *Install for me only* (~/Library/Audio/Plug-Ins) or *for all users* (/Library/Audio/Plug-Ins); *Customize* picks VST3, AU and/or the app.
+- **XEMX-macOS.dmg**: drag XEMX.vst3 / XEMX.component / XEMX.app into any folder you like, including a custom VST3 folder. Then run the `xattr -cr` commands from *Read me first.txt*.
 
-Universal build for Apple Silicon and Intel, macOS 11 or later.
-
-If macOS says the installer is from an unidentified developer: open System Settings → Privacy & Security, scroll down and click **Open Anyway** (or right-click the .pkg → Open).
+If macOS says the download is from an unidentified developer: System Settings → Privacy & Security → **Open Anyway**.

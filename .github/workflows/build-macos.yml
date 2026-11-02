@@ -56,6 +56,13 @@ jobs:
           VERSION=$(sed -n 's/^project(XEMX VERSION \([0-9.]*\)).*/\1/p' CMakeLists.txt) bash installer/build-pkg.sh
           pkgutil --payload-files XEMX-Installer.pkg | grep -E "XEMX\.(vst3|component|app)$" || true
 
+      - name: Build disk image
+        env:
+          APP_IDENTITY: ${{ secrets.MACOS_APP_IDENTITY }}
+        run: |
+          bash installer/make-dmg.sh
+          if [ "$HAS_SIGNING" = "true" ]; then codesign --force --timestamp --sign "$APP_IDENTITY" XEMX-macOS.dmg; fi
+
       - name: Notarize
         if: env.HAS_SIGNING == 'true'
         env:
@@ -65,14 +72,18 @@ jobs:
         run: |
           xcrun notarytool submit XEMX-Installer.pkg --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
           xcrun stapler staple XEMX-Installer.pkg
+          xcrun notarytool submit XEMX-macOS.dmg --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+          xcrun stapler staple XEMX-macOS.dmg
 
       - uses: actions/upload-artifact@v4
         with:
-          name: XEMX-Installer
-          path: XEMX-Installer.pkg
+          name: XEMX-macOS
+          path: |
+            XEMX-Installer.pkg
+            XEMX-macOS.dmg
 
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" XEMX-Installer.pkg --title "XEMX $GITHUB_REF_NAME" --notes-file installer/RELEASE_NOTES.md
+        run: gh release create "$GITHUB_REF_NAME" XEMX-Installer.pkg XEMX-macOS.dmg --title "XEMX $GITHUB_REF_NAME" --notes-file installer/RELEASE_NOTES.md
