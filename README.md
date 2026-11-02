@@ -7,11 +7,17 @@ A plugin version of the Korg Electribe EMX-1. It plays the patterns from `.emx` 
 - Drum samples come from your own EMX-1 sample folder or ZIP, picked with SAMPLES. By default it looks in `~/Downloads/ELECTRIBE`. No samples are included in this repo.
 - Effects and output follow the service-manual block diagram: 3 FX slots with chain routing, audio-in thru, valve stage (TUBE GAIN), then master.
 
-## Download a build
+## Install
 
-Every push to `main` runs **Actions → Build macOS**. Download the `XEMX-macOS` artifact from the run. It contains the plugins and `INSTALL-MAC.txt`.
+Download **XEMX-Installer.pkg** from the latest Release (or from the `XEMX-Installer` artifact of an Actions run), double-click it and follow the steps. It installs the VST3 to `/Library/Audio/Plug-Ins/VST3`, the Audio Unit to `/Library/Audio/Plug-Ins/Components` and the app to `/Applications`. **Customize** lets you pick only some of them.
 
-The builds are ad-hoc signed, not notarized, so after copying the plugins run `xattr -cr` on them once (see INSTALL-MAC.txt).
+The installer is not notarized yet. The first time, macOS shows an "unidentified developer" warning: open System Settings → Privacy & Security and click **Open Anyway**.
+
+## Releases and signing
+
+- Push a tag such as `v0.1.0` to publish a GitHub Release with the installer attached.
+- To remove the macOS warning, add these repository secrets from an Apple Developer account. CI then signs with Developer ID, notarizes and staples automatically:
+  `MACOS_CERTS_P12` (base64 .p12 with the Developer ID Application + Installer certificates), `MACOS_CERTS_PASSWORD`, `MACOS_APP_IDENTITY`, `MACOS_INSTALLER_IDENTITY`, `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_PASSWORD`.
 
 ## Build on a Mac
 
@@ -27,4 +33,5 @@ cmake --build build --config Release
 - `Source/`: engine, EMX file model, panel UI (shared with the Windows repo)
 - `factory/FACTORY.EMX`: factory patterns built into the plugin
 - `docs/EMX_FORMAT.md`: the decoded `.emx` format
-- `.github/workflows/build-macos.yml`: CI build
+- `installer/`: .pkg installer (distribution, welcome and finish pages)
+- `.github/workflows/build-macos.yml`: CI build, installer, optional notarization
