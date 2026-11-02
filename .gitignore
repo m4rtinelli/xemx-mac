@@ -1,0 +1,7 @@
+build/
+build-*/
+.vs/
+.vscode/
+.DS_Store
+*.wav
+player/emx-player*.html

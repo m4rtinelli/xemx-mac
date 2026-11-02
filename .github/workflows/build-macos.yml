@@ -1,0 +1,39 @@
+name: Build macOS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -G Xcode
+
+      - name: Build
+        run: cmake --build build --config Release -- -quiet
+
+      - name: Ad-hoc sign
+        run: |
+          A=build/XEMX_artefacts/Release
+          codesign --force --deep --sign - "$A/VST3/XEMX.vst3"
+          codesign --force --deep --sign - "$A/AU/XEMX.component"
+          codesign --force --deep --sign - "$A/Standalone/XEMX.app"
+          lipo -info "$A/VST3/XEMX.vst3/Contents/MacOS/XEMX"
+
+      - name: Package
+        run: |
+          A=build/XEMX_artefacts/Release
+          mkdir -p dist
+          cp -R "$A/VST3/XEMX.vst3" "$A/AU/XEMX.component" "$A/Standalone/XEMX.app" dist/
+          cp INSTALL-MAC.txt dist/
+          cd dist && ditto -c -k --keepParent . ../XEMX-macOS.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: XEMX-macOS
+          path: XEMX-macOS.zip

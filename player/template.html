@@ -1,0 +1,738 @@
+<title>EMX-1 Pattern Player</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one hardware panel — LCD + transport strip on top, pattern browser left, 16-step grid right. */
+:root {
+  --panel: #1d1f24;      /* EMX body */
+  --panel-2: #26292f;
+  --bezel: #0f1013;
+  --ink: #d9dce2;
+  --ink-dim: #868c98;
+  --lcd: #a8c43a;        /* backlit LCD */
+  --lcd-ink: #1f2a07;
+  --drum: #ff6a2b;       /* step LEDs, drum side */
+  --synth: #4fb7ff;      /* synth side */
+  --play: #f4f1e6;
+  --line: #34383f;
+  --f-lcd: "VT323", ui-monospace, monospace;
+  --f-body: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box }
+body { background: var(--bezel); color: var(--ink); font: 14px/1.45 var(--f-body);
+  padding-block: 20px 40px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.unit { max-width: 1180px; margin: 0 auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: inset 0 1px 0 #ffffff10, 0 20px 50px #0008; }
+.top { display: flex; flex-wrap: wrap; gap: 16px; align-items: stretch; padding: 18px; border-bottom: 1px solid var(--line) }
+.brand { display: flex; flex-direction: column; justify-content: center; min-width: 120px }
+.brand b { font: 600 22px/1 var(--f-body); letter-spacing: .14em }
+.brand span { color: var(--ink-dim); font-size: 11px; letter-spacing: .18em; text-transform: uppercase; margin-top: 4px }
+.lcd { flex: 1 1 320px; min-width: 0; background: var(--lcd); color: var(--lcd-ink); border-radius: 4px; padding: 6px 14px;
+  border: 6px solid #0b0c0e; box-shadow: inset 0 0 18px #0004; font-family: var(--f-lcd); display: grid;
+  grid-template-columns: 1fr auto; gap: 0 16px; }
+.lcd .big { font-size: 40px; line-height: 1; letter-spacing: .05em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.lcd .r { text-align: right; font-size: 40px; line-height: 1 }
+.lcd .small { font-size: 21px; line-height: 1.1; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.transport { display: flex; flex-wrap: wrap; gap: 10px; align-items: center }
+button, .filebtn { font: 600 12px/1 var(--f-body); letter-spacing: .12em; text-transform: uppercase; color: var(--ink);
+  background: var(--panel-2); border: 1px solid #000; border-radius: 6px; padding: 12px 14px; cursor: pointer;
+  box-shadow: inset 0 1px 0 #ffffff14, 0 2px 0 #000; }
+button:hover, .filebtn:hover { background: #30343b }
+button:focus-visible, .filebtn:focus-within, input:focus-visible, .pat:focus-visible, .lab:focus-visible { outline: 2px solid var(--lcd); outline-offset: 2px }
+button.play[aria-pressed="true"] { background: var(--drum); color: #1a0a02 }
+.filebtn input { position: absolute; opacity: 0; width: 1px; height: 1px }
+.tempo { display: flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-dim) }
+.tempo input { width: 68px; font: 500 14px var(--f-mono); background: var(--bezel); color: var(--ink); border: 1px solid var(--line); border-radius: 4px; padding: 8px }
+
+.samplebar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 10px 18px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--ink-dim) }
+.samplebar #sampleMsg { flex: 1 1 300px; min-width: 0 }
+.samplebar a { color: var(--lcd) }
+.samplebar .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ink-dim); flex: none }
+.samplebar.ready .dot { background: var(--lcd); box-shadow: 0 0 8px var(--lcd) }
+.samplebar.busy .dot { background: var(--drum) }
+.samplebar .toggle { display: flex; gap: 6px; align-items: center; white-space: nowrap }
+body.dragging .unit { outline: 2px dashed var(--lcd); outline-offset: 4px }
+.body { display: grid; grid-template-columns: 250px minmax(0, 1fr); min-height: 520px }
+aside { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0 }
+.tabs { display: flex; border-bottom: 1px solid var(--line) }
+.tabs button { flex: 1; border-radius: 0; box-shadow: none; border: 0; background: transparent; color: var(--ink-dim) }
+.tabs button[aria-selected="true"] { color: var(--ink); background: var(--panel-2); box-shadow: inset 0 -2px 0 var(--lcd) }
+.search { padding: 10px }
+.search input { width: 100%; font: 14px var(--f-body); background: var(--bezel); color: var(--ink); border: 1px solid var(--line); border-radius: 4px; padding: 8px 10px }
+.list { overflow-y: auto; max-height: 560px; padding: 0 6px 10px }
+.pat { display: grid; grid-template-columns: 34px 1fr auto; gap: 8px; align-items: baseline; padding: 6px 8px; border-radius: 4px; cursor: pointer; color: var(--ink) }
+.pat:hover { background: var(--panel-2) }
+.pat[aria-current="true"] { background: #2f3a12; color: #e9f5c0 }
+.pat .n { font: 12px var(--f-mono); color: var(--ink-dim); font-variant-numeric: tabular-nums }
+.pat .m { font: 12px var(--f-mono); color: var(--ink-dim); font-variant-numeric: tabular-nums }
+.pat.empty { opacity: .45 }
+
+main { padding: 16px 18px 20px; min-width: 0 }
+.measures { display: flex; gap: 6px; align-items: center; margin-bottom: 14px; flex-wrap: wrap }
+.measures .lbl { font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-dim); margin-right: 6px }
+.measures button { padding: 8px 10px; min-width: 34px; font-family: var(--f-mono) }
+.measures button[aria-current="true"] { background: var(--lcd); color: var(--lcd-ink) }
+.measures button:disabled { opacity: .25; cursor: default }
+.follow { margin-left: auto; display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--ink-dim) }
+.gridwrap { overflow-x: auto }
+.grid { display: grid; grid-template-columns: 170px repeat(16, minmax(30px, 1fr)); gap: 4px; min-width: 690px }
+.lab { display: flex; flex-direction: column; justify-content: center; padding: 2px 8px; border-radius: 4px; cursor: pointer; background: var(--panel-2); min-width: 0 }
+.lab b { font: 600 12px/1.1 var(--f-body); letter-spacing: .08em }
+.lab span { font: 11px/1.2 var(--f-mono); color: var(--ink-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.lab.muted { opacity: .35; text-decoration: line-through }
+.sep { grid-column: 1 / -1; height: 6px }
+.cell { height: 34px; border-radius: 3px; background: #15171b; border: 1px solid #0a0b0d; position: relative;
+  font: 10px/32px var(--f-mono); text-align: center; color: #0b1a26; overflow: hidden }
+.cell.beat { background: #1b1e23 }
+.cell.on.d { background: var(--drum); box-shadow: 0 0 10px #ff6a2b66 }
+.cell.on.s { background: var(--synth); box-shadow: 0 0 10px #4fb7ff55 }
+.cell.off-range { opacity: .25 }
+.cell.now { outline: 2px solid var(--play); outline-offset: -2px }
+.head { font: 11px var(--f-mono); color: var(--ink-dim); text-align: center; font-variant-numeric: tabular-nums }
+.head.now { color: var(--play) }
+.notes { margin-top: 18px; color: var(--ink-dim); font-size: 12.5px; max-width: 70ch; display: grid; gap: 6px }
+.notes b { color: var(--ink) }
+.msg { color: var(--drum) }
+@media (max-width: 760px) {
+  .body { grid-template-columns: 1fr }
+  aside { border-right: 0; border-bottom: 1px solid var(--line) }
+  .list { max-height: 260px }
+  .lcd .big, .lcd .r { font-size: 32px }
+}
+@media (prefers-reduced-motion: reduce) { .cell.on { box-shadow: none } }
+</style>
+
+<div class="unit">
+  <div class="top">
+    <div class="brand"><b>EMX-1</b><span>Pattern player</span></div>
+    <div class="lcd" aria-live="polite">
+      <div class="big" id="lcdName">E.House1</div><div class="r" id="lcdBpm">128.0</div>
+      <div class="small" id="lcdInfo">P001 · 8 MEAS · 16 STEP</div><div class="small" id="lcdPos" style="text-align:right">1.01</div>
+    </div>
+    <div class="transport">
+      <button class="play" id="play" aria-pressed="false">▶ Play</button>
+      <label class="tempo" for="bpm">BPM <input id="bpm" type="number" min="20" max="300" step="0.1" value="128"></label>
+      <label class="filebtn">Abrir .EMX<input id="file" type="file" accept=".emx,.EMX"></label>
+      <label class="filebtn">Samples<input id="samples" type="file" accept=".zip,.wav,audio/wav" multiple></label>
+    </div>
+  </div>
+  <div class="samplebar" id="sampleBar">
+    <span class="dot" id="sampleDot"></span>
+    <span id="sampleMsg">Sons sintetizados. Para ouvir os samples originais, baixe <a href="https://archive.org/download/drum-machines-collection/Korg%20Electribe%20EMX-1.zip" target="_blank" rel="noopener">Korg Electribe EMX-1.zip</a> do Internet Archive e solte o arquivo aqui (ou use o botão Samples).</span>
+    <label class="toggle" for="useSamples"><input type="checkbox" id="useSamples" checked> usar samples</label>
+  </div>
+  <div class="body">
+    <aside>
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tabP" aria-selected="true">Patterns</button>
+        <button role="tab" id="tabS" aria-selected="false">Songs</button>
+      </div>
+      <div class="search"><input id="q" type="search" placeholder="Buscar (ex.: D&B, HipHop)" aria-label="Buscar"></div>
+      <div class="list" id="list"></div>
+    </aside>
+    <main>
+      <div class="measures" id="measures"></div>
+      <div class="gridwrap"><div class="grid" id="grid"></div></div>
+      <div class="notes">
+        <div id="fileMsg"><b>Arquivo:</b> dados de fábrica (extraídos do EMX1Config). Abra um .EMX do seu cartão para tocar os seus.</div>
+        <div><b>Fiel ao arquivo</b> (conferido campo a campo com o EMX1Config): steps, notas e gates, BPM, swing por parte, accent, roll, compassos, beat, waves e tipo de oscilador, parâmetros de cada parte, motion sequences, os 3 efeitos e a cadeia de FX, songs.</div>
+        <div><b>Aproximado:</b> as curvas de som (quanto cada knob muda o timbre) são estimadas, porque sem o hardware não dá para medir. Os 76 PCMs do synth não estão no banco de samples e são imitados por síntese. Sem samples carregados, a bateria também é sintetizada.</div>
+        <div>Clique no nome de uma parte para mutar.</div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+const EMX_B64 = "__EMX_B64__";
+const WAVES = __WAVES__;
+const EMBEDDED_SAMPLES = __SAMPLES__; // { "file.wav": base64 } in the local build, null in the published one
+
+// ---------- parser (same layout and tables as emx_parse.js, verified against EMX1Config) ----------
+const P_BASE = 0x200, P_SIZE = 0x12c6, S_BASE = 0x130000, S_SIZE = 0x210;
+const DRUM_PARTS = ["1", "2", "3", "4", "5", "6A", "6B", "7A", "7B"];
+const BASIC = ["Saw", "Squ", "Tri", "Sin"], WAVE4 = ["Saw", "Pulse", "Tri", "Sin"];
+const PAIRS = BASIC.flatMap(a => [...BASIC, "Ns"].map(b => a + b));
+const PCM_WAVES = ["Piano","E.Piano","Clav","M1-Organ","Organ","Marimba","Vibe","Cymbell","Flute","AltoSax","M1-T.Sax","Trumpet","MuteTp","BrassEns","VoiceAh","M1-Choir","VoiceWav","Violin","Strings","Pizzicat","F.Guitar","A.Guitar","MuteGtr","FunkGtr","Sitar","A.Bass","E.Bass","M1-Bass","PickBass","SlapBass","FMBass","88Bass","BoostSaw","SawSqMix","HPFSaw","OctBass1","OctBass2","Saw5th","Squ5th","SynSin1","SynSin2","SynSin3","SynSin4","SynSin5","SynWire1","SynWire2","Digi1","Digi2","Digi3","Digi4","SynVox1","SynVox2","Endless","Syn-FX1","Syn-FX2","OrchHit","BandHit1","BandHit2","DiscoHit","RaveHit1","RaveHit2","RaveHit3","RaveHit4","RaveHit5","RaveHit6","CH-Piano","CH-M1Pia","CH-EPian","CH-Organ","CH-Strgs","CH-Gtr1","CH-Gtr2","DR-BDs","DR-SDs","DR-CymTm","DR-Percs"];
+const OSC_TYPES = [["Wave", WAVE4], ["Dual", PAIRS], ["Chord", BASIC], ["Unison", BASIC.flatMap(w => [3, 4, 5, 6].map(n => n + w))],
+  ["RingMod", PAIRS], ["Sync", WAVE4], ["XMod", PAIRS], ["VPM", BASIC], ["WS", ["Type1", "Type2"]], ["Additive", BASIC],
+  ["Comb", [...BASIC, "Noise"]], ["Formant", null], ["Noise", null], ["PCM+Cmb", PCM_WAVES], ["PCM+WS", PCM_WAVES], ["AudioIn+Comb", null]];
+const FX_NAMES = ["Reverb", "BPM Delay", "Short Delay", "Mod Delay", "Grain Shift", "Cho/Flg", "Phaser", "Ring Mod",
+  "Talking Mod", "Pitch Shift", "Compressor", "Distortion", "Decimator", "EQ", "LPF", "HPF"];
+const SYNC_NOTES = [8, 4, 2, 1, 3 / 4, 1 / 2, 3 / 8, 1 / 3, 1 / 4, 3 / 16, 1 / 6, 1 / 8, 1 / 12, 1 / 16, 1 / 24, 1 / 32, 1 / 64]; // in bars
+// Delay Time byte -> note length in bars (breakpoints read off EMX1Config's display of the factory data)
+const DELAY_NOTES = [[0, 1 / 64], [10, 1 / 32], [17, 1 / 24], [28, 1 / 16], [36, 1 / 12], [45, 1 / 8], [55, 1 / 6], [64, 3 / 16],
+  [74, 1 / 4], [88, 3 / 8], [102, 1 / 2], [112, 3 / 4], [121, 1]];
+const MOTION_DRUM = { 1: "Pitch", 7: "Level", 8: "Pan", 9: "EGTime", 10: "AmpEG", 11: "Roll", 13: "FXSend", 14: "FXSelect", 16: "ModDepth" };
+const MOTION_SYNTH = { 3: "OscEdit1", 4: "OscEdit2", 5: "Glide", 6: "FilterType", 7: "Cutoff", 8: "Resonance", 9: "EGInt", 10: "Drive",
+  11: "Level", 12: "Pan", 13: "EGTime", 15: "Roll", 17: "FXSend", 18: "FXSelect", 19: "ModType", 20: "ModDepth", 21: "ModSpeed", 22: "ModDest" };
+const MOTION_FX = { 5: [0, "e1"], 6: [0, "e2"], 9: [1, "e1"], 10: [1, "e2"], 13: [2, "e1"], 14: [2, "e2"] };
+const nameAt = (b, o) => String.fromCharCode(...b.subarray(o, o + 8)).replace(/[^ -~]/g, " ").replace(/\s+$/, "");
+const tempoAt = (b, o) => b[o] * 2 + (b[o + 1] >> 7) + (b[o + 1] & 0x0f) / 10;
+const bits = (b, o) => { const a = new Array(128); for (let s = 0; s < 128; s++) a[s] = !!(b[o + (s >> 3)] & (1 << (s & 7))); return a };
+const signed = v => Math.max(-63, v - 64);
+const gateSteps = g => (g < 128 ? (g + 1) * 0.25 : g < 192 ? 16.5 + (g - 128) * 0.5 : g - 127);
+
+// Parameters keep the file's raw byte scale so motion-sequence values (same scale) can replace them per step.
+function common(p, o, mo) {
+  const f = p[o], m = p[mo];
+  return { FXSelect: f & 3, FXSend: (f >> 2) & 1, Roll: (f >> 3) & 1, AmpEG: (f >> 4) & 1,
+    ModDest: m & 7, ModType: (m >> 4) & 7, BPMSync: m >> 7, ModSpeed: p[mo + 1], ModDepth: p[mo + 2], motion: p[mo + 3] & 3 };
+}
+function parsePattern(b, i) {
+  const p = b.subarray(P_BASE + i * P_SIZE, P_BASE + (i + 1) * P_SIZE);
+  const swingMask = (p[0x12] << 8) | p[0x13], accentMask = (p[0x16] << 8) | p[0x17];
+  const drums = DRUM_PARTS.map((part, d) => { const o = 0x18 + d * 26;
+    return { part, wave: p[o], Pitch: p[o + 1], Level: p[o + 2], Pan: p[o + 3], EGTime: p[o + 4], ...common(p, o + 5, o + 6),
+      swing: swingMask >> d & 1, accent: accentMask >> d & 1, steps: bits(p, o + 10) } });
+  const synths = [0, 1, 2, 3, 4].map(s => { const o = 0x102 + s * 276; const steps = [];
+    for (let k = 0; k < 128; k++) { const n = p[o + 20 + k]; steps.push(n & 0x80 ? null : { note: n & 0x7f, gate: gateSteps(p[o + 148 + k]) }) }
+    const [oscName, waves] = OSC_TYPES[p[o + 2]] || ["?", null];
+    return { part: String(s + 1), osc: p[o + 2], wave: p[o], oscName, waveName: waves ? waves[p[o]] || "" : "",
+      Tune: p[o + 1] - 50, OscEdit1: p[o + 3], OscEdit2: p[o + 4], Glide: p[o + 5], FilterType: p[o + 6] & 3, Cutoff: p[o + 7],
+      Resonance: p[o + 8], EGInt: p[o + 9], Drive: p[o + 10], Level: p[o + 11], Pan: p[o + 12], EGTime: p[o + 13],
+      ...common(p, o + 14, o + 16), swing: swingMask >> (9 + s) & 1, accent: accentMask >> (9 + s) & 1, steps } });
+  const fx = [0, 1, 2].map(k => { const o = 0x68a + k * 4; return { type: p[o] & 15, e1: p[o + 1], e2: p[o + 2], motionSeq: p[o + 3] & 1 } });
+  const motion = {};   // "d0".."d8", "s0".."s4", "fx" -> [{ param, values[128] }]
+  for (let m = 0; m < 24; m++) { const o = 0x696 + m * 130; const id = (p[o] << 8) | p[o + 1]; if (id === 0xffff) continue;
+    const part = id >> 5, prm = id & 31, key = part < 5 ? "s" + part : part < 14 ? "d" + (part - 5) : "fx";
+    const param = key === "fx" ? MOTION_FX[prm] : (key[0] === "d" ? MOTION_DRUM : MOTION_SYNTH)[prm]; if (!param) continue;
+    (motion[key] = motion[key] || []).push({ param, values: [...p.subarray(o + 2, o + 130)].map(v => (v === 0xff || v === 0x80 ? null : v)) }) }
+  const any = drums.some(d => d.steps.some(Boolean)) || synths.some(s => s.steps.some(Boolean));
+  const beat = (p[0x0b] >> 4) & 3;
+  return { number: i + 1, name: nameAt(p, 0), bpm: tempoAt(p, 8), swing: 50 + (p[0x0a] & 0x1f), measures: (p[0x0b] & 7) + 1,
+    beat, rolls: ((p[0x0b] >> 6) & 3) + 2, fxChain: p[0x0c] & 3, lastStep: Math.min(beat >= 2 ? 12 : 16, p[0x0d] + 1),
+    accent: { drum: p[0x666], drumSteps: bits(p, 0x668), synth: p[0x678], synthSteps: bits(p, 0x67a) },
+    drums, synths, fx, motion, empty: !any };
+}
+function parseSongs(b) {
+  const out = [];
+  for (let i = 0; i < 64; i++) { const o = S_BASE + i * S_SIZE; const name = nameAt(b, o); if (!/[A-Za-z0-9]/.test(name)) continue;
+    const n = b[o + 0x0b] + 1; out.push({ number: i + 1, name, bpm: tempoAt(b, o + 8), patterns: [...b.subarray(o + 0x10, o + 0x10 + n)] }) }
+  return out;
+}
+function load(bytes) {
+  const sig = String.fromCharCode(...bytes.subarray(0, 4)) + String.fromCharCode(...bytes.subarray(8, 11));
+  if (sig !== "KORGEMX") throw new Error("Este arquivo não é um .EMX da EMX-1 (cabeçalho KORG/EMX ausente). Arquivos da ESX-1 não são compatíveis.");
+  if (bytes.length < S_BASE + 64 * S_SIZE) throw new Error("Arquivo incompleto: um .EMX tem 1.736.704 bytes.");
+  const patterns = []; for (let i = 0; i < 256; i++) patterns.push(parsePattern(bytes, i));
+  return { patterns, songs: parseSongs(bytes) };
+}
+// Motion values replace a parameter from the step they were recorded on until the next recorded value.
+function motionAt(list, idx) {
+  const out = {};
+  for (const m of list || []) { for (let k = idx; k >= 0; k--) if (m.values[k] != null) { out[m.param] = m.values[k]; break } }
+  return out;
+}
+// Motion values for switch-like parameters are stored on the knob's 0-127 scale.
+function withMotion(part, mv) {
+  const q = { ...part };
+  for (const [k, v] of Object.entries(mv)) {
+    if (k === "AmpEG" || k === "Roll" || k === "FXSend") q[k] = v >= 64 ? 1 : 0;
+    else if (k === "FXSelect") q[k] = Math.min(2, Math.floor(v / 43));
+    else if (k === "FilterType") q[k] = Math.min(3, v >> 5);
+    else if (k === "ModType") q[k] = Math.min(4, v >> 4);
+    else if (k === "ModDest") q[k] = Math.min(5, Math.floor(v / 22));
+    else q[k] = v;
+  }
+  return q;
+}
+
+// ---------- audio ----------
+let ctx, master, noiseBuf, fxUnits = [], fxPattern = null, curBpm = 120;
+const expMap = (v, lo, hi) => lo * Math.pow(hi / lo, v / 127);
+const egSeconds = v => expMap(v, 0.012, 4);          // EG Time knob, approximate curve
+const mtof = n => 440 * Math.pow(2, (n - 69) / 12);
+const barSec = () => 240 / curBpm;
+function initAudio() {
+  if (ctx) return;
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  master = ctx.createDynamicsCompressor(); master.threshold.value = -18; master.ratio.value = 8; master.attack.value = 0.002;
+  const out = ctx.createGain(), clip = ctx.createWaveShaper(); out.gain.value = 0.75; clip.curve = curve(Math.tanh);
+  master.connect(out); out.connect(clip); clip.connect(ctx.destination);
+  noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+  const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+}
+function impulse(sec) {
+  const n = Math.floor(ctx.sampleRate * sec), b = ctx.createBuffer(2, n, ctx.sampleRate);
+  for (let c = 0; c < 2; c++) { const d = b.getChannelData(c); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3) }
+  return b;
+}
+const curve = fn => { const c = new Float32Array(1024); for (let i = 0; i < 1024; i++) c[i] = fn(i / 511.5 - 1); return c };
+
+// One effect slot. Each returns input/output nodes and set(e1, e2, t) so motion sequences can move its edits.
+function makeFx(f) {
+  const input = ctx.createGain(), output = ctx.createGain(), dry = ctx.createGain(), wet = ctx.createGain();
+  input.connect(dry); dry.connect(output); wet.connect(output);
+  const live = [];
+  const lfo = (rate, amount, ...targets) => { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = rate; g.gain.value = amount;
+    o.connect(g); targets.forEach(t => g.connect(t)); o.start(); live.push(o); return { o, g } };
+  const mix = (w, t) => { wet.gain.setTargetAtTime(w, t, 0.02); dry.gain.setTargetAtTime(1 - w, t, 0.02) };
+  const ramp = (param, v, t) => param.setTargetAtTime(v, t, 0.02);
+  let set = () => {};
+  switch (f.type) {
+    case 0: { const conv = ctx.createConvolver(); let len = -1; input.connect(conv); conv.connect(wet); dry.gain.value = 1;
+      set = (a, b, t) => { const l = Math.round(a / 8); if (l !== len) { len = l; conv.buffer = impulse(0.25 + a / 127 * 4.5) } ramp(wet.gain, b / 127 * 0.8, t) }; break }
+    case 1: case 2: case 3: { const d = ctx.createDelay(4), fb = ctx.createGain(), tone = ctx.createBiquadFilter(); tone.frequency.value = 6000;
+      input.connect(d); d.connect(tone); tone.connect(fb); fb.connect(d); tone.connect(wet); wet.gain.value = 0.55; dry.gain.value = 1;
+      if (f.type === 3) lfo(0.6, 0.0025, d.delayTime);
+      set = (a, b, t) => { const sec = f.type === 2 ? expMap(a, 0.004, 0.75) : Math.min(3.9, DELAY_NOTES.filter(x => a >= x[0]).pop()[1] * barSec());
+        ramp(d.delayTime, sec, t); ramp(fb.gain, b / 127 * 0.88, t) }; break }
+    case 4: { const d = ctx.createDelay(1), fb = ctx.createGain(); input.connect(d); d.connect(fb); fb.connect(d); d.connect(wet); fb.gain.value = 0.7;
+      set = (a, b, t) => { ramp(d.delayTime, SYNC_NOTES[Math.min(16, 11 + Math.round(a / 127 * 5))] * barSec(), t); mix(b / 127 * 0.8, t) }; break }
+    case 5: { const d = ctx.createDelay(0.05), fb = ctx.createGain(); d.delayTime.value = 0.006; fb.gain.value = 0.35;
+      input.connect(d); d.connect(fb); fb.connect(d); d.connect(wet); const l = lfo(1, 0.003, d.delayTime); dry.gain.value = 1;
+      set = (a, b, t) => { ramp(l.o.frequency, expMap(a, 0.05, 12), t); ramp(l.g.gain, 0.0005 + b / 127 * 0.0045, t); ramp(wet.gain, 0.7, t) }; break }
+    case 6: { let node = input; const aps = [0, 1, 2, 3].map(() => { const ap = ctx.createBiquadFilter(); ap.type = "allpass"; ap.frequency.value = 900; node.connect(ap); node = ap; return ap });
+      node.connect(wet); wet.gain.value = 0.8; dry.gain.value = 0.8; const l = lfo(0.5, 600, ...aps.map(a => a.frequency));
+      set = (a, b, t) => { ramp(l.o.frequency, expMap(a, 0.05, 10), t); ramp(l.g.gain, 100 + b / 127 * 800, t) }; break }
+    case 7: { const rm = ctx.createGain(); rm.gain.value = 0; input.connect(rm); rm.connect(wet); const car = lfo(200, 1, rm.gain);
+      set = (a, b, t) => { ramp(car.o.frequency, expMap(a, 20, 6000), t); mix(b / 127, t) }; break }
+    case 8: { const f1 = ctx.createBiquadFilter(), f2 = ctx.createBiquadFilter(); f1.type = f2.type = "bandpass"; f1.Q.value = 6; f2.Q.value = 8;
+      input.connect(f1); input.connect(f2); f1.connect(wet); f2.connect(wet); dry.gain.value = 0; wet.gain.value = 2.2;
+      set = (a, b, t) => { const k = a / 127, off = Math.pow(2, signed(b) / 63); ramp(f1.frequency, (300 + 500 * k) * off, t); ramp(f2.frequency, (2300 - 1400 * k) * off, t) }; break }
+    case 9: { const d = ctx.createDelay(0.2), win = 0.06; input.connect(d); d.connect(wet); const saw = ctx.createOscillator(), g = ctx.createGain();
+      saw.type = "sawtooth"; saw.connect(g); g.connect(d.delayTime); d.delayTime.value = win / 2 + 0.002; saw.start(); live.push(saw);
+      set = (a, b, t) => { const r = Math.pow(2, Math.round((a - 64) * 0.3) / 12); saw.frequency.setValueAtTime(Math.abs(1 - r) / win || 0.0001, t);
+        g.gain.setValueAtTime(r > 1 ? win / 2 : -win / 2, t); mix(b / 127, t) }; break }
+    case 10: { const c = ctx.createDynamicsCompressor(), mk = ctx.createGain(); input.connect(c); c.connect(mk); mk.connect(wet); dry.gain.value = 0; wet.gain.value = 1; c.ratio.value = 8;
+      set = (a, b, t) => { c.threshold.setValueAtTime(-a / 127 * 45, t); c.attack.setValueAtTime(expMap(b, 0.001, 0.25), t); mk.gain.setValueAtTime(1 + a / 127 * 1.5, t) }; break }
+    case 11: { const ws = ctx.createWaveShaper(); let k = -1; input.connect(ws); ws.connect(wet); dry.gain.value = 0; ws.oversample = "2x";
+      set = (a, b, t) => { if (a !== k) { k = a; const g = 1 + a / 127 * 60; ws.curve = curve(x => Math.tanh(g * x) / Math.tanh(g)) } ramp(wet.gain, b / 127 * 0.9, t) }; break }
+    case 12: { const lp = ctx.createBiquadFilter(), ws = ctx.createWaveShaper(); let q = -1; input.connect(lp); lp.connect(ws); ws.connect(wet); dry.gain.value = 0; wet.gain.value = 1;
+      set = (a, b, t) => { ramp(lp.frequency, expMap(a, 400, 20000) / 2, t); const bitsN = Math.round(2 + b / 127 * 14);
+        if (bitsN !== q) { q = bitsN; const s = Math.pow(2, bitsN - 1); ws.curve = curve(x => Math.round(x * s) / s) } }; break }
+    case 13: { const lo = ctx.createBiquadFilter(), hi = ctx.createBiquadFilter(); lo.type = "lowshelf"; lo.frequency.value = 80; hi.type = "highshelf"; hi.frequency.value = 12000;
+      input.connect(lo); lo.connect(hi); hi.connect(wet); dry.gain.value = 0; wet.gain.value = 1;
+      set = (a, b, t) => { ramp(lo.gain, signed(a) / 63 * 15, t); ramp(hi.gain, signed(b) / 63 * 15, t) }; break }
+    case 14: case 15: { const flt = ctx.createBiquadFilter(); flt.type = f.type === 14 ? "lowpass" : "highpass"; input.connect(flt); flt.connect(wet); dry.gain.value = 0; wet.gain.value = 1;
+      set = (a, b, t) => { ramp(flt.frequency, expMap(a, 30, 18000), t); ramp(flt.Q, 0.7 + b / 127 * 16, t) }; break }
+  }
+  set(f.e1, f.e2, ctx.currentTime);
+  return { input, output, set, e1: f.e1, e2: f.e2, dispose(t) { setTimeout(() => { live.forEach(o => o.stop()); output.disconnect() }, 6000) } };
+}
+// Rebuild the three effect slots when the pattern changes. FX chain: 0 off, 1 = 1>2, 2 = 2>3, 3 = 1>2>3.
+function setupFx(p) {
+  if (fxPattern === p) return;
+  fxUnits.forEach(u => u.dispose()); fxPattern = p;
+  fxUnits = p.fx.map(makeFx);
+  const next = [[null, null, null], [1, null, null], [null, 2, null], [1, 2, null]][p.fxChain];
+  fxUnits.forEach((u, i) => u.output.connect(next[i] != null ? fxUnits[next[i]].input : master));
+}
+function voiceOut(part, vol, t) {
+  const g = ctx.createGain(); g.gain.value = vol;
+  const p = ctx.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, (part.Pan - 64) / 64));
+  g.connect(p); p.connect(part.FXSend && fxUnits[part.FXSelect] ? fxUnits[part.FXSelect].input : master);
+  return { gain: g, pan: p };
+}
+// Part LFO (saw, squ, tri, S&H, EG). Free speed is an approximate Hz curve; BPM sync uses the note table.
+function lfoSource(t, part, end) {
+  const period = part.BPMSync ? SYNC_NOTES[Math.round(part.ModSpeed * 16 / 127)] * barSec() : 1 / expMap(part.ModSpeed, 0.05, 30);
+  if (part.ModType <= 2) { const o = ctx.createOscillator(); o.type = ["sawtooth", "square", "triangle"][part.ModType]; o.frequency.value = 1 / period; o.start(t); o.stop(end); return o }
+  const c = ctx.createConstantSource();
+  if (part.ModType === 3) { for (let k = 0, x = t; x < end && k < 256; k++, x += period) c.offset.setValueAtTime(Math.random() * 2 - 1, x) }
+  else { c.offset.setValueAtTime(1, t); c.offset.exponentialRampToValueAtTime(0.001, t + period) }
+  c.start(t); c.stop(end); return c;
+}
+// targets: { pitch: [AudioParam detune...], cutoff, amp: GainNode, pan: StereoPannerNode }
+function applyMod(t, part, end, targets) {
+  const depth = signed(part.ModDepth) / 63; if (!depth) return;
+  const g = ctx.createGain(), src = lfoSource(t, part, end); src.connect(g);
+  switch (part.ModDest) {
+    case 0: g.gain.value = depth * 1200; (targets.pitch || []).forEach(p => g.connect(p)); break;
+    case 1: case 2: g.gain.value = depth * 600; (targets.pitch || []).slice(1).forEach(p => g.connect(p)); break;
+    case 3: if (targets.cutoff) { g.gain.value = depth * 3600; g.connect(targets.cutoff) } break;
+    case 4: targets.amp.gain.value = 1 - Math.abs(depth) / 2; g.gain.value = depth / 2; g.connect(targets.amp.gain); break;
+    case 5: g.gain.value = depth; g.connect(targets.pan.pan); break;
+  }
+}
+function noiseSrc(t) { const s = ctx.createBufferSource(); s.buffer = noiseBuf; s.loop = true; s.start(t, Math.random()); return s }
+function category(name) {
+  const n = name.toUpperCase();
+  if (n.startsWith("BD") || n === "BIGBREAK") return "kick";
+  if (n.startsWith("CLP")) return "clap";
+  if (n.startsWith("SD")) return "snare";
+  if (n.startsWith("RM")) return "rim";
+  if (n.startsWith("HH")) return /O$/.test(n) ? "ohat" : "chat";
+  if (n.startsWith("RID")) return "ride";
+  if (n.startsWith("CRS")) return "crash";
+  if (n.startsWith("REV")) return "rev";
+  if (/^(TOM|TAIKO|UDU|BAYA|DJMB|TSUZUMI)/.test(n)) return "tom";
+  if (/^(BNG|CNG|TIMB|TBLA)/.test(n)) return "conga";
+  if (/^(COWBELL|AGOGO|CHACHA|MAMBO|TRIANGLE|CLAVES|WBL)/.test(n)) return "bell";
+  if (/^(SHAKER|CABASA|TAMB|GUIRO|SLEIGH|JUNK)/.test(n)) return "shaker";
+  if (/^(ZAP|SYNPERC|GTRWAH|WHISTLE)/.test(n)) return "zap";
+  if (n.startsWith("SCRATCH")) return "scratch";
+  return "tom";
+}
+function env(param, t, peak, attack, decay) {
+  param.setValueAtTime(0.0001, t); param.exponentialRampToValueAtTime(peak, t + attack);
+  param.exponentialRampToValueAtTime(0.0001, t + attack + decay);
+}
+function tone(t, out, type, f0, f1, sweep, peak, decay, det) {
+  const o = ctx.createOscillator(), g = ctx.createGain(); o.type = type; det.push(o.detune);
+  o.frequency.setValueAtTime(f0, t); if (f1) o.frequency.exponentialRampToValueAtTime(f1, t + sweep);
+  env(g.gain, t, peak, 0.002, decay); o.connect(g); g.connect(out); o.start(t); o.stop(t + decay + 0.05);
+}
+function noise(t, out, ftype, freq, q, peak, decay, attack = 0.001) {
+  const s = noiseSrc(t), f = ctx.createBiquadFilter(); f.type = ftype; f.frequency.value = freq; f.Q.value = q;
+  const g = ctx.createGain(); env(g.gain, t, peak, attack, decay);
+  s.connect(f); f.connect(g); g.connect(out); s.stop(t + attack + decay + 0.05);
+}
+// Drum voice. Pitch ±63 is read as ±1 octave; Amp EG on = decay set by EG Time, off = whole sample.
+function playDrum(t, d, accent) {
+  const name = WAVES[d.wave] || "", semis = signed(d.Pitch) / 63 * 12, pm = Math.pow(2, semis / 12);
+  const vol = Math.pow(d.Level / 127, 1.6) * 0.95 * accent;
+  const v = voiceOut(d, vol, t), amp = ctx.createGain(); amp.connect(v.gain);
+  const buf = $("useSamples").checked && samples[d.wave];
+  const egLen = d.AmpEG ? egSeconds(d.EGTime) : Infinity, det = [];
+  let end;
+  if (buf) {
+    const s = ctx.createBufferSource(); s.buffer = buf; s.playbackRate.value = pm; det.push(s.detune);
+    const len = buf.duration / pm; end = t + Math.min(len, egLen) + 0.02;
+    if (egLen < len) { amp.gain.setValueAtTime(1, t); amp.gain.exponentialRampToValueAtTime(0.0001, t + egLen) }
+    s.connect(amp); s.start(t); s.stop(end);
+  } else {
+    const dec = Math.min(1, egLen / 1.2) * (d.AmpEG ? 1 : 1.0), out = amp;
+    end = t + 1.6;
+    const hi = /H\b|HI|-H/.test(name.toUpperCase()), lo = /L\b|LO|-L|F$/.test(name.toUpperCase());
+    switch (category(name)) {
+      case "kick": tone(t, out, "sine", 150 * pm, 42 * pm, 0.09, 1, 0.45 * dec, det); tone(t, out, "triangle", 900 * pm, 120, 0.02, 0.25, 0.02, det); break;
+      case "snare": tone(t, out, "triangle", 210 * pm, 160 * pm, 0.05, 0.5, 0.09 * dec, det); noise(t, out, "highpass", 1500 * pm, 0.7, 0.7, 0.18 * dec); break;
+      case "clap": for (let k = 0; k < 3; k++) noise(t + k * 0.011, out, "bandpass", 1150 * pm, 1.4, 0.75, 0.025);
+        noise(t + 0.033, out, "bandpass", 1150 * pm, 1.2, 0.7, 0.16 * dec); break;
+      case "rim": tone(t, out, "square", 820 * pm, 0, 0, 0.35, 0.025, det); noise(t, out, "bandpass", 3000, 2, 0.4, 0.02); break;
+      case "chat": noise(t, out, "highpass", 7500 * pm, 0.8, 0.5, 0.045 * dec); break;
+      case "ohat": noise(t, out, "highpass", 7000 * pm, 0.8, 0.45, 0.32 * dec); break;
+      case "ride": noise(t, out, "bandpass", 9000, 0.6, 0.28, 0.7 * dec); tone(t, out, "square", 520 * pm, 0, 0, 0.05, 0.5 * dec, det); break;
+      case "crash": noise(t, out, "highpass", 4500, 0.5, 0.5, 1.4 * dec); break;
+      case "tom": { const f = (hi ? 240 : lo ? 110 : 160) * pm; tone(t, out, "sine", f * 1.6, f, 0.08, 0.9, 0.32 * dec, det); break }
+      case "conga": { const f = (hi ? 420 : lo ? 220 : 310) * pm; tone(t, out, "sine", f * 1.25, f, 0.03, 0.8, 0.18 * dec, det); noise(t, out, "bandpass", f * 4, 3, 0.15, 0.015); break }
+      case "bell": tone(t, out, "square", 560 * pm, 0, 0, 0.22, 0.14 * dec, det); tone(t, out, "square", 845 * pm, 0, 0, 0.18, 0.14 * dec, det); break;
+      case "shaker": noise(t, out, "bandpass", 6000, 1.5, 0.45, 0.07 * dec, 0.012); break;
+      case "zap": tone(t, out, "sawtooth", 1800 * pm, 90 * pm, 0.12, 0.35, 0.16 * dec, det); break;
+      case "rev": noise(t, out, "lowpass", 3000, 0.7, 0.6, 0.02, 0.25 * dec); break;
+      case "scratch": tone(t, out, "sawtooth", 300 * pm, 900 * pm, 0.06, 0.3, 0.12, det); noise(t, out, "bandpass", 1800, 2, 0.3, 0.12); break;
+    }
+  }
+  applyMod(t, d, end, { pitch: det, amp, pan: v.pan });
+}
+
+// ---------- synth oscillators ----------
+// Edit 1/2 meanings follow the EMX manual's oscillator list; the curves are approximations.
+const BASIC_TYPES = ["sawtooth", "square", "triangle", "sine"];
+const CHORDS = [[0, 7], [0, 5, 7], [0, 3, 7], [0, 4, 7], [0, 3, 7, 10], [0, 4, 7, 11], [0, 4, 7, 10], [0, 2, 7], [0, 4, 8], [0, 3, 6]];
+let periodic = {};
+function additiveWave(kind, n) {
+  const key = kind + ":" + n; if (periodic[key]) return periodic[key];
+  const re = new Float32Array(n + 1), im = new Float32Array(n + 1);
+  for (let h = 1; h <= n; h++) im[h] = kind === 0 ? 1 / h : kind === 1 ? (h % 2 ? 1 / h : 0) : kind === 2 ? (h % 2 ? Math.pow(-1, (h - 1) / 2) / (h * h) : 0) : (h === 1 ? 1 : 0);
+  return (periodic[key] = ctx.createPeriodicWave(re, im));
+}
+// PCM waves are not in the sample bank: each name maps to the closest oscillator recipe.
+function pcmRecipe(name) {
+  if (/Bass|Saw|HPF|Boost|SawSq/.test(name)) return { type: "sawtooth", detune: /Oct/.test(name) ? 1200 : /5th/.test(name) ? 702 : 0 };
+  if (/Squ|Clav|Digi|Wire/.test(name)) return { type: "square" };
+  if (/Organ/.test(name)) return { type: "organ" };
+  if (/Strings|Strgs|Violin|Brass|Trumpet|Sax|Endless|Choir|Voice|Vox|Hit/.test(name)) return { type: "sawtooth", detune: 9, pair: true };
+  if (/DR-/.test(name)) return { type: "noise" };
+  return { type: /Sin|Flute|Marimba|Vibe|Cymbell/.test(name) ? "sine" : "triangle", pluck: /Piano|Pia|Guitar|Gtr|Pizz|Sitar|Marimba|Vibe|Cymbell|EPian/.test(name) };
+}
+// Returns { out, freqs: [[AudioParam, ratio]], detunes: [AudioParam] } for one note.
+function buildOsc(t, end, s) {
+  const out = ctx.createGain(), freqs = [], detunes = [], e1 = s.OscEdit1 / 127, e2 = s.OscEdit2 / 127;
+  const osc = (type, ratio = 1, gain = 1, dest = out) => {
+    const o = ctx.createOscillator();
+    if (type === "organ") o.setPeriodicWave(periodic.organ || (periodic.organ = ctx.createPeriodicWave(new Float32Array(9), new Float32Array([0, 1, 0.8, 0, 0.6, 0, 0.3, 0, 0.4]))));
+    else if (typeof type === "string") o.type = type; else o.setPeriodicWave(type);
+    const g = ctx.createGain(); g.gain.value = gain; o.connect(g); g.connect(dest); o.start(t); o.stop(end);
+    freqs.push([o.frequency, ratio]); detunes.push(o.detune); return o;
+  };
+  const nz = (gain, dest = out) => { const n = noiseSrc(t), g = ctx.createGain(); g.gain.value = gain; n.connect(g); g.connect(dest); n.stop(end); return n };
+  const pair = (gainB, ratioB) => { const a = Math.floor(s.wave / 5), b = s.wave % 5; osc(BASIC_TYPES[a], 1, 0.6);
+    return b === 4 ? nz(gainB * 0.5) : osc(BASIC_TYPES[b], ratioB, gainB * 0.6) };
+  const comb = (src) => { const d = ctx.createDelay(0.1), fb = ctx.createGain(); src.connect(d); d.connect(fb); fb.connect(d); d.connect(out);
+    fb.gain.value = 0.5 + e1 * 0.47; return d };
+  switch (s.osc) {
+    case 0: osc(BASIC_TYPES[s.wave & 3]); break;
+    case 1: pair(e2 * 1.2, Math.pow(2, (e1 * 24 - 0) / 12)); break;                         // Dual: Edit1 osc2 pitch, Edit2 osc2 level
+    case 2: CHORDS[Math.min(9, Math.floor(e1 * 10))].forEach((iv, k) => osc(BASIC_TYPES[s.wave & 3], Math.pow(2, (iv + (k && e2 > 0.5 ? 12 : 0)) / 12), 0.45)); break;
+    case 3: { const n = 3 + (s.wave & 3), w = BASIC_TYPES[s.wave >> 2]; for (let k = 0; k < n; k++) osc(w, Math.pow(2, ((k / (n - 1) - 0.5) * e1 * 60) / 1200), 1.4 / n); break }
+    case 4: { const rm = ctx.createGain(); rm.gain.value = 0; rm.connect(out); const a = Math.floor(s.wave / 5), b = s.wave % 5;
+      osc(BASIC_TYPES[a], 1, 1, rm); const mod = ctx.createGain(); mod.connect(rm.gain);
+      if (b === 4) nz(1, mod); else osc(BASIC_TYPES[b], Math.pow(2, (e1 * 48 - 24) / 12) , 1, mod); break }
+    case 5: osc(BASIC_TYPES[s.wave & 3], 1 + e1 * 3, 0.9); break;                               // Sync: no hard sync in Web Audio, slave pitch only
+    case 6: case 7: { const a = s.osc === 7 ? s.wave & 3 : Math.floor(s.wave / 5), carrier = osc(BASIC_TYPES[a]);
+      const ratio = s.osc === 7 ? 1 + Math.floor(e2 * 8) : Math.pow(2, (e2 * 24 - 12) / 12), mg = ctx.createGain();
+      const m = s.osc === 6 && s.wave % 5 === 4 ? nz(1, mg) : osc(s.osc === 7 ? "sine" : BASIC_TYPES[s.wave % 5], ratio, 1, mg);
+      mg.connect(carrier.frequency); mg.gain.value = 0; freqs.push([mg.gain, (s.osc === 7 ? e1 * 6 : e1 * 4)]); break }
+    case 8: { const ws = ctx.createWaveShaper(), pre = ctx.createGain(); pre.gain.value = 1 + e1 * 6; pre.connect(ws); ws.connect(out);
+      ws.curve = s.wave ? curve(x => Math.sin(x * Math.PI * 1.5)) : curve(x => Math.tanh(x * 2)); osc(s.wave ? "sine" : "triangle", 1, 1, pre); break }
+    case 9: osc(additiveWave(s.wave & 3, 2 + Math.round(e1 * 30)), 1, 0.9); break;
+    case 10: { const src = ctx.createGain(); src.gain.value = 0.5; const d = comb(src);
+      if (s.wave === 4) nz(1, src); else osc(BASIC_TYPES[s.wave & 3], 1, 1, src); freqs.push([d.delayTime, -1]); break }
+    case 11: { const src = ctx.createGain(); osc("sawtooth", 1, 1, src); const v = Math.floor(e1 * 4.99), F = [[730, 1090], [270, 2290], [300, 870], [570, 840], [440, 1020]][v];
+      F.forEach(fq => { const b = ctx.createBiquadFilter(); b.type = "bandpass"; b.frequency.value = fq * (0.7 + e2 * 0.6); b.Q.value = 8; src.connect(b); b.connect(out) }); out.gain.value = 3; break }
+    case 12: { const b = ctx.createBiquadFilter(); b.type = "bandpass"; b.Q.value = 1 + e1 * 30; nz(2, b); b.connect(out); freqs.push([b.frequency, 1]); break }
+    case 13: case 14: { const r = pcmRecipe(PCM_WAVES[s.wave] || "");
+      const src = s.osc === 13 ? ctx.createGain() : out;
+      if (r.type === "noise") nz(0.6, src); else { osc(r.type, 1, 0.8, src); if (r.detune) osc(r.type, Math.pow(2, r.detune / 1200), 0.6, src); if (r.pair) osc(r.type, Math.pow(2, -r.detune / 1200), 0.6, src) }
+      if (s.osc === 13) { src.connect(out); if (e1 > 0.05) { const d = comb(src); freqs.push([d.delayTime, -1]) } }
+      if (r.pluck) { out.gain.setValueAtTime(1, t); out.gain.setTargetAtTime(0.15, t, 0.35) } break }
+    case 15: break;                                                                                // AudioIn: nothing to play
+  }
+  return { out, freqs, detunes };
+}
+const lastNote = [], activeSynth = [];
+// Synth voice: oscillator -> drive -> filter (EG on detune) -> amp -> mod gain -> level/pan.
+// Gate lengths come straight from the file; EG/filter curves are approximate.
+function playSynth(t, s, ev, sd, accent, i) {
+  const dur = Math.max(0.02, ev.gate * sd), egT = egSeconds(s.EGTime), end = t + dur + (s.AmpEG ? 0 : 0.03) + 0.1;
+  const v = voiceOut(s, Math.pow(s.Level / 127, 1.5) * 0.4 * accent, t), modAmp = ctx.createGain(); modAmp.connect(v.gain);
+  const prev = activeSynth[i];   // parts are monophonic: a new note cuts the previous one
+  if (prev && prev.end > t) { prev.amp.gain.cancelScheduledValues(t); prev.amp.gain.setTargetAtTime(0.0001, t, 0.004) }
+  const o = buildOsc(t, end + 0.05, s);
+  const f = mtof(ev.note + s.Tune), from = s.Glide && lastNote[i] ? mtof(lastNote[i] + s.Tune) : f; lastNote[i] = ev.note;
+  const glide = expMap(s.Glide, 0.005, 1.2);
+  // ratio -1 = comb delay time (1/f); other ratios scale the note frequency (oscillators, FM depth)
+  o.freqs.forEach(([param, ratio]) => {
+    if (!ratio) return;
+    const val = x => (ratio === -1 ? 1 / x : x * ratio);
+    param.setValueAtTime(val(from), t); if (from !== f) param.exponentialRampToValueAtTime(val(f), t + glide);
+  });
+  const drive = ctx.createWaveShaper(), dk = 1 + s.Drive / 127 * 12; drive.curve = curve(x => Math.tanh(dk * x) / Math.tanh(dk));
+  const flt = ctx.createBiquadFilter(); flt.type = ["lowpass", "highpass", "bandpass", "bandpass"][s.FilterType];
+  flt.frequency.setValueAtTime(expMap(s.Cutoff, 30, 18000), t); flt.Q.value = 0.7 + Math.pow(s.Resonance / 127, 2) * 22;
+  const eg = signed(s.EGInt) / 63 * 6000;   // cents, decays to 0 over EG Time
+  flt.detune.setValueAtTime(eg, t); flt.detune.setTargetAtTime(0, t, egT / 4);
+  const amp = ctx.createGain();
+  amp.gain.setValueAtTime(0.0001, t); amp.gain.exponentialRampToValueAtTime(1, t + 0.004);
+  if (s.AmpEG) amp.gain.setTargetAtTime(0.0001, t + 0.004, egT / 4);
+  amp.gain.setValueAtTime(s.AmpEG ? Math.max(0.0001, Math.exp(-(dur - 0.004) * 4 / egT)) : 1, t + dur);
+  amp.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.03);
+  o.out.connect(drive); drive.connect(flt);
+  if (s.FilterType === 3) { const b = ctx.createGain(); b.gain.value = 0.5; o.out.connect(b); b.connect(amp); flt.gain.value = 1 }
+  flt.connect(amp); amp.connect(modAmp);
+  applyMod(t, s, end, { pitch: o.detunes, cutoff: flt.detune, amp: modAmp, pan: v.pan });
+  activeSynth[i] = { amp, flt, lvl: v.gain, pan: v.pan, end: t + dur, accent };
+}
+// Moves a held synth note with the part's motion sequence (cutoff sweeps over long gates).
+function motionHeld(t, s, i, mv, smooth) {
+  const a = activeSynth[i]; if (!a || t >= a.end) return;
+  const go = (param, val) => smooth ? param.linearRampToValueAtTime(val, t) : param.setValueAtTime(val, t);
+  if ("Cutoff" in mv) go(a.flt.frequency, expMap(mv.Cutoff, 30, 18000));
+  if ("Resonance" in mv) go(a.flt.Q, 0.7 + Math.pow(mv.Resonance / 127, 2) * 22);
+  if ("Level" in mv) go(a.lvl.gain, Math.pow(mv.Level / 127, 1.5) * 0.4 * a.accent);
+  if ("Pan" in mv) go(a.pan.pan, Math.max(-1, Math.min(1, (mv.Pan - 64) / 64)));
+}
+
+// ---------- original samples (loaded by the viewer, kept in their browser) ----------
+// Archive.org names ("BassDrum-88-1.wav") normalise to the same key as the EMX wave names ("BD-88 1").
+const sampleKey = s => s.toLowerCase().replace(/^.*[\/\\]/, "").replace(/\.wav$/, "").replace(/bassdrum/g, "bd")
+  .replace(/lynn/g, "lyn").replace(/crck1/, "crckl").replace(/noise/, "nois").replace(/[^a-z0-9&]/g, "");
+const WAVE_BY_KEY = new Map(WAVES.map((w, i) => [sampleKey(w), i]));
+const samples = [];
+let sampleCount = 0;
+
+function setSampleStatus(state, text) {
+  const bar = $("sampleBar"); bar.classList.toggle("ready", state === "ready"); bar.classList.toggle("busy", state === "busy");
+  $("sampleMsg").textContent = text;
+}
+async function decodeSamples(entries, persist) {   // entries: [{ name, buf: ArrayBuffer }]
+  initAudio();
+  const matched = entries.filter(e => WAVE_BY_KEY.has(sampleKey(e.name)));
+  if (!matched.length) { setSampleStatus("", "Nenhum arquivo corresponde às waves da EMX-1. Use o ZIP \"Korg Electribe EMX-1\" do Internet Archive."); return }
+  setSampleStatus("busy", `Decodificando ${matched.length} samples…`);
+  let ok = 0;
+  for (const e of matched) {
+    try { samples[WAVE_BY_KEY.get(sampleKey(e.name))] = await ctx.decodeAudioData(e.buf.slice(0)); ok++ } catch (err) { }
+  }
+  sampleCount = samples.filter(Boolean).length;
+  setSampleStatus("ready", `Samples originais: ${sampleCount} de 207 waves carregadas.` + (persist ? " Ficam salvos neste navegador." : ""));
+  if (persist) saveSamples(matched);
+}
+async function readSampleFiles(files) {
+  const entries = [];
+  for (const f of files) {
+    if (/\.zip$/i.test(f.name)) {
+      if (!window.JSZip) { setSampleStatus("", "Não foi possível abrir o ZIP (biblioteca não carregou). Extraia e selecione os .wav."); return }
+      setSampleStatus("busy", "Abrindo " + f.name + "…");
+      const zip = await JSZip.loadAsync(f);
+      for (const z of Object.values(zip.files)) if (!z.dir && /\.wav$/i.test(z.name)) entries.push({ name: z.name, buf: await z.async("arraybuffer") });
+    } else if (/\.wav$/i.test(f.name)) entries.push({ name: f.name, buf: await f.arrayBuffer() });
+  }
+  await decodeSamples(entries, true);
+}
+// IndexedDB cache, per viewer. Any failure just means samples must be loaded again next visit.
+function idb() {
+  return new Promise((res, rej) => { try { const r = indexedDB.open("emx-player", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("samples"); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) } catch (e) { rej(e) } });
+}
+async function saveSamples(entries) {
+  try { const db = await idb(); const tx = db.transaction("samples", "readwrite"); const st = tx.objectStore("samples");
+    st.clear(); entries.forEach(e => st.put(e.buf, e.name)); } catch (e) { }
+}
+async function restoreSamples() {
+  try { const db = await idb(); const st = db.transaction("samples").objectStore("samples");
+    const [keys, vals] = await Promise.all([st.getAllKeys(), st.getAll()].map(r => new Promise(res => { r.onsuccess = () => res(r.result) })));
+    if (keys.length) await decodeSamples(keys.map((k, i) => ({ name: k, buf: vals[i] })), false);
+  } catch (e) { }
+}
+
+// ---------- state ----------
+let data, current = 0, view = 0, follow = true, tab = "p";
+let songMode = null; // { song, pos }
+const muted = new Set();
+let playing = false, timer = null, nextTime = 0, step = 0, bpmOverride = null;
+const $ = id => document.getElementById(id);
+
+function stepDuration(p, bpm) { return 60 / bpm / [4, 8, 3, 6][p.beat] }
+
+function schedule() {
+  const p = data.patterns[current];
+  const bpm = bpmOverride || p.bpm; curBpm = bpm; setupFx(p);
+  while (nextTime < ctx.currentTime + 0.12) {
+    const meas = Math.floor(step / p.lastStep), within = step % p.lastStep, idx = meas * 16 + within;
+    const sd = stepDuration(p, bpm), t0 = nextTime;
+    const swingOff = within % 2 === 1 ? (p.swing / 50 - 1) * sd : 0;   // swing % of the step pair, only on parts with Swing on
+    for (const m of p.motion.fx || []) { const [k, e] = m.param, u = fxUnits[k], v = m.values[idx];
+      if (u && p.fx[k].motionSeq && v != null) { u[e] = v; u.set(u.e1, u.e2, t0) } }
+    p.drums.forEach((d0, i) => {
+      if (!d0.steps[idx] || muted.has("d" + i)) return;
+      const d = d0.motion ? withMotion(d0, motionAt(p.motion["d" + i], idx)) : d0, t = t0 + (d.swing ? swingOff : 0);
+      const acc = d.accent && p.accent.drumSteps[idx] ? 1 + p.accent.drum / 127 * 0.8 : 1, hits = d.Roll ? p.rolls : 1;
+      for (let k = 0; k < hits; k++) playDrum(t + k * sd / hits, d, acc * (k ? 0.8 : 1));
+    });
+    p.synths.forEach((s0, i) => {
+      if (muted.has("s" + i)) return;
+      const mv = s0.motion ? motionAt(p.motion["s" + i], idx) : {}, s = withMotion(s0, mv), ev = s0.steps[idx];
+      const t = t0 + (s.swing ? swingOff : 0);
+      if (!ev) { if (s0.motion) motionHeld(t, s, i, mv, s0.motion === 1); return }
+      const acc = s.accent && p.accent.synthSteps[idx] ? 1 + p.accent.synth / 127 * 0.6 : 1, hits = s.Roll ? p.rolls : 1;
+      for (let k = 0; k < hits; k++) playSynth(t + k * sd / hits, s, hits > 1 ? { note: ev.note, gate: Math.min(ev.gate, 0.9 / hits) } : ev, sd, acc, i);
+    });
+    const shown = { meas, within, at: nextTime };
+    setTimeout(() => showPos(shown), Math.max(0, (nextTime - ctx.currentTime) * 1000));
+    nextTime += sd; step++;
+    if (step >= p.lastStep * p.measures) { step = 0; if (songMode) advanceSong(); return }
+  }
+}
+function advanceSong() {
+  songMode.pos = (songMode.pos + 1) % songMode.song.patterns.length;
+  selectPattern(songMode.song.patterns[songMode.pos], true);
+}
+function start() {
+  initAudio(); ctx.resume(); playing = true; step = 0; nextTime = ctx.currentTime + 0.05;
+  timer = setInterval(schedule, 25); $("play").setAttribute("aria-pressed", "true"); $("play").textContent = "■ Stop";
+}
+function stop() {
+  playing = false; activeSynth.length = 0; lastNote.length = 0; clearInterval(timer); $("play").setAttribute("aria-pressed", "false"); $("play").textContent = "▶ Play";
+  document.querySelectorAll(".now").forEach(e => e.classList.remove("now"));
+}
+
+// ---------- UI ----------
+const NOTE = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const noteName = n => NOTE[n % 12] + (Math.floor(n / 12) - 1);
+
+function renderList() {
+  const q = $("q").value.trim().toLowerCase(), list = $("list"); list.innerHTML = "";
+  const frag = document.createDocumentFragment();
+  if (tab === "p") data.patterns.forEach((p, i) => {
+    if (q && !p.name.toLowerCase().includes(q)) return;
+    const el = document.createElement("div"); el.className = "pat" + (p.empty ? " empty" : ""); el.tabIndex = 0;
+    el.setAttribute("aria-current", String(i === current && !songMode));
+    el.innerHTML = `<span class="n">${String(i + 1).padStart(3, "0")}</span><span></span><span class="m">${p.bpm.toFixed(0)}</span>`;
+    el.children[1].textContent = p.name || "—";
+    el.onclick = el.onkeydown = e => { if (e.type === "keydown" && e.key !== "Enter") return; songMode = null; selectPattern(i, false) };
+    frag.appendChild(el);
+  });
+  else {
+    if (!data.songs.length) { const e = document.createElement("div"); e.className = "pat"; e.textContent = "Nenhuma song neste arquivo."; frag.appendChild(e) }
+    data.songs.forEach(s => {
+      if (q && !s.name.toLowerCase().includes(q)) return;
+      const el = document.createElement("div"); el.className = "pat"; el.tabIndex = 0;
+      el.setAttribute("aria-current", String(!!songMode && songMode.song === s));
+      el.innerHTML = `<span class="n">S${String(s.number).padStart(2, "0")}</span><span></span><span class="m">${s.patterns.length} pos</span>`;
+      el.children[1].textContent = s.name;
+      el.onclick = el.onkeydown = e => { if (e.type === "keydown" && e.key !== "Enter") return;
+        songMode = { song: s, pos: 0 }; selectPattern(s.patterns[0], false); if (!playing) start() };
+      frag.appendChild(el);
+    });
+  }
+  list.appendChild(frag);
+}
+function selectPattern(i, fromSong) {
+  current = i; view = 0; const p = data.patterns[i];
+  if (!fromSong) { bpmOverride = songMode ? songMode.song.bpm : null; if (playing) { step = 0 } }
+  $("bpm").value = (bpmOverride || p.bpm).toFixed(1);
+  renderLcd(); renderGrid(); renderList();
+}
+function renderLcd() {
+  const p = data.patterns[current];
+  $("lcdName").textContent = songMode ? songMode.song.name : (p.name || "(vazio)");
+  $("lcdBpm").textContent = (bpmOverride || p.bpm).toFixed(1);
+  const beat = ["16", "32", "8TRI", "16TRI"][p.beat];
+  $("lcdInfo").textContent = songMode
+    ? `POS ${songMode.pos + 1}/${songMode.song.patterns.length} · P${String(current + 1).padStart(3, "0")} ${p.name}`
+    : `P${String(current + 1).padStart(3, "0")} · ${p.measures} MEAS · ${p.lastStep} STEP · ${beat}`;
+}
+function renderGrid() {
+  const p = data.patterns[current], g = $("grid"); g.innerHTML = "";
+  const ms = $("measures"); ms.innerHTML = '<span class="lbl">Compasso</span>';
+  for (let m = 0; m < 8; m++) { const b = document.createElement("button"); b.textContent = m + 1; b.disabled = m >= p.measures;
+    b.setAttribute("aria-current", String(m === view)); b.onclick = () => { view = m; follow = false; $("follow").checked = false; renderGrid() }; ms.appendChild(b) }
+  const f = document.createElement("label"); f.className = "follow"; f.innerHTML = '<input type="checkbox" id="follow"> seguir playhead';
+  ms.appendChild(f); $("follow").checked = follow; $("follow").onchange = e => { follow = e.target.checked };
+  const add = (cls, html) => { const e = document.createElement("div"); e.className = cls; if (html != null) e.innerHTML = html; g.appendChild(e); return e };
+  add("", ""); for (let s = 0; s < 16; s++) add("head", String(s + 1)).dataset.s = s;
+  const row = (key, title, sub, kind, cellFn) => {
+    const l = add("lab" + (muted.has(key) ? " muted" : ""), `<b></b><span></span>`); l.tabIndex = 0;
+    l.children[0].textContent = title; l.children[1].textContent = sub;
+    l.onclick = l.onkeydown = e => { if (e.type === "keydown" && e.key !== "Enter") return; muted.has(key) ? muted.delete(key) : muted.add(key); l.classList.toggle("muted") };
+    for (let s = 0; s < 16; s++) { const c = add("cell " + kind + (s % 4 === 0 ? " beat" : "") + (s >= p.lastStep ? " off-range" : "")); c.dataset.s = s; cellFn(c, view * 16 + s) }
+  };
+  p.drums.forEach((d, i) => row("d" + i, "DRUM " + d.part, WAVES[d.wave] || ("wave " + d.wave), "d", (c, idx) => { if (d.steps[idx]) c.classList.add("on") }));
+  add("sep");
+  p.synths.forEach((s, i) => row("s" + i, "SYNTH " + s.part, (s.oscName + " " + s.waveName).trim(), "s", (c, idx) => { const ev = s.steps[idx]; if (ev) { c.classList.add("on"); c.textContent = noteName(ev.note) } }));
+}
+function showPos(pos) {
+  if (!playing) return;
+  if (follow && pos.meas !== view) { view = pos.meas; renderGrid() }
+  $("lcdPos").textContent = `${pos.meas + 1}.${String(pos.within + 1).padStart(2, "0")}`;
+  if (songMode) renderLcd();
+  document.querySelectorAll(".now").forEach(e => e.classList.remove("now"));
+  if (pos.meas === view) document.querySelectorAll(`#grid [data-s="${pos.within}"]`).forEach(e => e.classList.add("now"));
+}
+
+$("play").onclick = () => playing ? stop() : start();
+$("bpm").onchange = e => { const v = parseFloat(e.target.value); if (v >= 20 && v <= 300) { bpmOverride = v; renderLcd() } };
+$("q").oninput = renderList;
+$("tabP").onclick = () => { tab = "p"; $("tabP").setAttribute("aria-selected", "true"); $("tabS").setAttribute("aria-selected", "false"); renderList() };
+$("tabS").onclick = () => { tab = "s"; $("tabS").setAttribute("aria-selected", "true"); $("tabP").setAttribute("aria-selected", "false"); renderList() };
+$("file").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try { data = load(new Uint8Array(await f.arrayBuffer())); stop(); songMode = null;
+    $("fileMsg").innerHTML = "<b>Arquivo:</b> "; $("fileMsg").append(f.name + ` (${data.patterns.filter(p => !p.empty).length} patterns com conteúdo, ${data.songs.length} songs).`);
+    selectPattern(0, false);
+  } catch (err) { $("fileMsg").innerHTML = '<span class="msg"></span>'; $("fileMsg").firstChild.textContent = err.message }
+};
+$("samples").onchange = e => { if (e.target.files.length) readSampleFiles([...e.target.files]) };
+document.addEventListener("dragover", e => { e.preventDefault(); document.body.classList.add("dragging") });
+document.addEventListener("dragleave", e => { if (!e.relatedTarget) document.body.classList.remove("dragging") });
+document.addEventListener("drop", e => { e.preventDefault(); document.body.classList.remove("dragging");
+  const files = [...e.dataTransfer.files]; if (!files.length) return;
+  if (files.length === 1 && /\.emx$/i.test(files[0].name)) { const dt = new DataTransfer(); dt.items.add(files[0]); $("file").files = dt.files; $("file").onchange({ target: $("file") }) }
+  else readSampleFiles(files) });
+document.addEventListener("keydown", e => { if (e.code === "Space" && !/INPUT/.test(document.activeElement.tagName)) { e.preventDefault(); playing ? stop() : start() } });
+
+data = load(Uint8Array.from(atob(EMX_B64), c => c.charCodeAt(0)));
+selectPattern(0, false);
+if (EMBEDDED_SAMPLES) {
+  decodeSamples(Object.entries(EMBEDDED_SAMPLES).map(([name, b64]) => ({ name, buf: Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer })), false)
+    .then(() => setSampleStatus("ready", `Samples originais embutidos: ${sampleCount} de 207 waves.`));
+} else restoreSamples();
+</script>
